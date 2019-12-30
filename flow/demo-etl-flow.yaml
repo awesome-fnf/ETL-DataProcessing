@@ -1,0 +1,94 @@
+version: v1beta1
+type: flow
+steps:
+  # 本步骤调用函数计算 shards-spliter.py，获取划分的 shards 及对应数据
+  - type: task
+    name: fetcher
+    resourceArn: acs:fc:::services/demo-etl/functions/shards-spliter
+    outputMappings:
+      - target: shards
+        source: $local.shards
+      - target: shard_ids
+        source: $local.shard_ids
+    retry:
+      - errors:
+          - ErrorNeedsRetry
+        intervalSeconds: 10
+        maxAttempts: 3
+        multiplier: 2
+      - errors:
+          - FC.ResourceThrottled
+          - FC.ResourceExhausted
+          - FC.InternalServerError
+          - FnF.TaskTimeout
+          - FC.Unknown
+        intervalSeconds: 3
+        maxAttempts: 10
+        multiplier: 2
+    catch:
+      - errors:
+        - ErrorNeedsRetry
+        goto: retryFailed
+
+  # Map 步骤，根据上一步划分的 shards 数量创建对应实例并行处理
+  - type: foreach
+    name: mapping
+    inputMappings:
+      - target: shards
+        source: $local.shards
+    iterationMapping:
+      collection: $.shards
+      item: shard
+    steps:
+      - type: task
+        name: singleMappingJob
+        resourceArn: acs:fc:::services/demo-etl/functions/mapper
+        retry:
+          - errors:
+              - ErrorNeedsRetry
+            intervalSeconds: 10
+            maxAttempts: 3
+            multiplier: 2
+          - errors:
+              - FC.ResourceThrottled
+              - FC.ResourceExhausted
+              - FC.InternalServerError
+              - FnF.TaskTimeout
+              - FC.Unknown
+            intervalSeconds: 3
+            maxAttempts: 10
+            multiplier: 2
+
+  # reduce 步骤，合并所有 shards 的 Map 结果，并将最终的处理结果存储到数据仓库中
+  - type: task
+    name: reducing
+    resourceArn: acs:fc:::services/demo-etl/functions/reducer
+    inputMappings:
+      - target: shard_ids
+        source: $local.shard_ids
+    retry:
+      - errors:
+          - ErrorNeedsRetry
+        intervalSeconds: 10
+        maxAttempts: 3
+        multiplier: 2
+      - errors:
+          - FC.ResourceThrottled
+          - FC.ResourceExhausted
+          - FC.InternalServerError
+          - FnF.TaskTimeout
+          - FC.Unknown
+        intervalSeconds: 3
+        maxAttempts: 10
+        multiplier: 2
+    catch:
+      - errors:
+        - ErrorNeedsRetry
+        goto: retryFailed
+    end: true
+
+  - type: fail
+    name: retryFailed
+    error: StatusFailed
+    cause: retry several times failed
+
