@@ -19,7 +19,7 @@
 aliyun ros CreateStack --StackName=etl-stack1 --TemplateBody "$(cat ./ros.yaml)" --Parameters.1.ParameterKey=MainAccountID --Parameters.1.ParameterValue={YourAccountID} --Parameters.2.ParameterKey=RandomSuffix --Parameters.2.ParameterValue=stack1 --RegionId=cn-beijing --TimeoutInMinutes=10
 ```
 
-其中，请将 `{YourAccountID}` 替换为您的主账号ID。
+其中，请将 `{YourAccountID}` 替换为您的主账号ID。"stack1" 参数可以使用随机字符串等自定义参数。
 
 执行该命令后，我们将创建以下资源用于本次示例工程：
 
