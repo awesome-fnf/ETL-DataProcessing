@@ -48,7 +48,7 @@ Resources:
   demo-etl-flow:
     Type: 'Aliyun::Serverless::Flow'
     Properties:
-      Description: 'Unzip single file'
+      Description: 'etl demo'
       Role:
         Fn::GetAtt: 
           - 'RAMRole'
