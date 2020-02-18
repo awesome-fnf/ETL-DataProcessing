@@ -1,0 +1,102 @@
+ROSTemplateFormatVersion: '2015-09-01'
+Transform: 'Aliyun::Serverless-2018-04-03'
+
+Resources:
+  RAMRole:
+    Type: ALIYUN::RAM::Role
+    Properties:
+      RoleName:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - ETLDemoRole-<random-suffix>
+      Description: 'RAM role for etl demo'
+      AssumeRolePolicyDocument:
+        Version: 1
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - fc.aliyuncs.com
+                - fnf.aliyuncs.com
+      Policies:
+        - PolicyName:
+            Fn::Replace:
+              - <random-suffix>:
+                  Ref: ALIYUN::StackName
+              - ETLDemoRAMPolicy-<random-suffix>
+          PolicyDocument:
+            Version: 1
+            Statement:
+              - Effect: Allow
+                Action:
+                  - fc:InvokeFunction
+                  - oss:*
+                Resource:
+                  - '*'
+  OSSBucket:
+    Type: ALIYUN::OSS::Bucket
+    Properties:
+      BucketName:
+        Fn::Replace:
+        - <stack-name>:
+            Ref: ALIYUN::StackName
+        - demo-etl-<stack-name>
+      AccessControl: private
+
+  demo-etl-flow:
+    Type: 'Aliyun::Serverless::Flow'
+    Properties:
+      Description: 'Unzip single file'
+      Role:
+        Fn::GetAtt: 
+          - 'RAMRole'
+          - "Arn"
+      DefinitionUri: flow/demo-etl-flow.yaml
+  demo-etl-service:
+    Type: 'Aliyun::Serverless::Service'
+    Properties:
+      Role:
+        Fn::GetAtt: 
+          - 'RAMRole'
+          - "Arn"
+    shards-spliter:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 60
+        MemorySize: 256
+        CodeUri: functions/shards-spliter
+        EnvironmentVariables:
+          BucketName: 
+            Fn::GetAtt: 
+              - 'OSSBucket'
+              - "Name"
+    mapper:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 600
+        MemorySize: 512
+        CodeUri: functions/mapper
+        EnvironmentVariables:
+          BucketName: 
+            Fn::GetAtt: 
+              - 'OSSBucket'
+              - "Name"
+    reducer:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 600
+        MemorySize: 512
+        CodeUri: functions/reducer
+        EnvironmentVariables:
+          BucketName: 
+            Fn::GetAtt: 
+              - 'OSSBucket'
+              - "Name"

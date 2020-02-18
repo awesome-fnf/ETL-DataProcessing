@@ -4,7 +4,7 @@ steps:
   # 本步骤调用函数计算 shards-spliter.py，获取划分的 shards 及对应数据
   - type: task
     name: fetcher
-    resourceArn: acs:fc:::services/demo-etl/functions/shards-spliter
+    resourceArn: !Ref demo-etl-service/shards-spliter
     outputMappings:
       - target: shards
         source: $local.shards
@@ -42,7 +42,7 @@ steps:
     steps:
       - type: task
         name: singleMappingJob
-        resourceArn: acs:fc:::services/demo-etl/functions/mapper
+        resourceArn: !Ref demo-etl-service/mapper
         retry:
           - errors:
               - ErrorNeedsRetry
@@ -62,7 +62,7 @@ steps:
   # reduce 步骤，合并所有 shards 的 Map 结果，并将最终的处理结果存储到数据仓库中
   - type: task
     name: reducing
-    resourceArn: acs:fc:::services/demo-etl/functions/reducer
+    resourceArn: !Ref demo-etl-service/reducer
     inputMappings:
       - target: shard_ids
         source: $local.shard_ids

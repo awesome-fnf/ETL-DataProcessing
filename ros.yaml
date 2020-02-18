@@ -1,12 +1,4 @@
 ROSTemplateFormatVersion: '2015-09-01'
-Parameters:
-  RandomSuffix:
-    Type: String
-  MainAccountID:
-    Type: String
-  Region:
-    Type: String
-    Default: cn-beijing
 
 Resources:
   RAMRole:
@@ -15,7 +7,7 @@ Resources:
       RoleName:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - ETLDemoRole-<random-suffix>
       Description: 'RAM role for etl demo'
       AssumeRolePolicyDocument:
@@ -31,7 +23,7 @@ Resources:
         - PolicyName:
             Fn::Replace:
               - <random-suffix>:
-                  Ref: RandomSuffix
+                  Ref: ALIYUN::StackName
               - ETLDemoRAMPolicy-<random-suffix>
           PolicyDocument:
             Version: 1
@@ -50,7 +42,7 @@ Resources:
       BucketName:
         Fn::Replace:
         - <random-suffix>:
-            Ref: RandomSuffix
+            Ref: ALIYUN::StackName
         - demo-etl-<random-suffix>
       AccessControl: private
 
@@ -64,14 +56,14 @@ Resources:
       ServiceName:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - demo-etl-<random-suffix>
       Role:
         Fn::Replace:
           - <main-account-id>:
-              Ref: MainAccountID
+              Ref: ALIYUN::TenantId
             <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - acs:ram::<main-account-id>:role/ETLDemoRole-<random-suffix>
       InternetAccess: true
 
@@ -84,7 +76,7 @@ Resources:
       ServiceName:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - demo-etl-<random-suffix>
       Code:
         SourceCode:
@@ -131,38 +123,30 @@ Resources:
       ServiceName:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - demo-etl-<random-suffix>
       Code:
         SourceCode:
           Fn::Replace:
             - <random-suffix>:
-                Ref: RandomSuffix
+                Ref: ALIYUN::StackName
               <region>:
-                Ref: Region
+                Ref: ALIYUN::Region
             - |-
               # -*- coding: utf-8 -*-
               import json
               import oss2
               from enum import Enum
-
               oss_endpoint = "oss-<region>-internal.aliyuncs.com"
               oss_bucket = "demo-etl-<random-suffix>"
               intermediate_result_prefix = "map_%s"
-
-
               class ErrorCodes(Enum):
                 # common error codes
                 StatusSuccess = "operation success"
-
                 # for mapping
                 OSSPushObjectFailed = "push result to oss failed"
-
-
               class ErrorNeedsRetry(Exception):
                 pass
-
-
               class Mapper:
                 """
                 Mapping operation class
@@ -179,7 +163,6 @@ Resources:
                   self.bucket = oss2.Bucket(auth, oss_endpoint, oss_bucket)
                   self.data = shard_data
                   self.mapping_result = {}
-
                 def process(self):
                   """ process data.
                   :return:
@@ -190,28 +173,21 @@ Resources:
                     else:
                       self.mapping_result[data] = 1
                   return
-
                 def persist(self):
                   """ touch file in oss. True will be returned if operation succeeded.
                   :return: bool
                   """
                   resp = self.bucket.put_object(self.mapping_result_file, json.dumps(self.mapping_result))
                   return resp.status == 200
-
-
               def handler(event, context):
                 evt = json.loads(event)
                 shard = evt["shard"]
-
                 mapper = Mapper(context, shard["id"], shard["data"])
-
                 # start mapping data processing
                 mapper.process()
-
                 # save to oss bucket
                 if not mapper.persist():
                   raise ErrorNeedsRetry(ErrorCodes.OSSPushObjectFailed.value)
-
                 return json.dumps({"MappingStatus": ErrorCodes.StatusSuccess.value})
       FunctionName: mapper
       Handler: index.handler
@@ -228,45 +204,37 @@ Resources:
       ServiceName:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - demo-etl-<random-suffix>
       Code:
         SourceCode:
           Fn::Replace:
             - <random-suffix>:
-                Ref: RandomSuffix
+                Ref: ALIYUN::StackName
               <region>:
-                Ref: Region
+                Ref: ALIYUN::Region
             - |-
               # -*- coding: utf-8 -*-
               import json
               import oss2
               from enum import Enum
               from aliyunsdkcore.acs_exception.exceptions import *
-
               oss_endpoint = "oss-<region>-internal.aliyuncs.com"
               oss_bucket = "demo-etl-<random-suffix>"
               intermediate_result_prefix = "map_%s"
               final_result = "reduced_result"
-
               class ErrorCodes(Enum):
                 # common error codes
                 StatusSuccess = "operation success"
-
                 # for reducing
                 OSSGetObjectFailed = "get mapping result to oss failed"
                 OSSPushObjectFailed = "push result to oss failed"
-
-
               class ErrorNeedsRetry(Exception):
                 pass
-
-
               class Reducer:
                 """
                 reducing operation class
                 """
-
                 def __init__(self, context, shard_ids):
                   """
                   :param context: fc input context, used for getting credential.
@@ -278,7 +246,6 @@ Resources:
                   self.bucket = oss2.Bucket(auth, oss_endpoint, oss_bucket)
                   self.intermediate_result = []
                   self.final_result = {}
-
                 def fetch_mapping_result(self):
                   """
                   :return: bool
@@ -294,7 +261,6 @@ Resources:
                       # data crash
                       return False
                   return True
-
                 def reducing(self):
                   """
                   :return: None
@@ -307,34 +273,25 @@ Resources:
                       else:
                         self.final_result[data_type] = data[data_type]
                   return
-
                 def persist(self):
                   """ touch file in oss. True will be returned if operation succeeded.
                   :return: bool
                   """
                   resp = self.bucket.put_object(final_result, json.dumps(self.final_result))
                   return resp.status == 200
-
-
               def handler(event, context):
                 evt = json.loads(event)
-
                 shard_ids = evt["shard_ids"]
                 reducer = Reducer(context, shard_ids)
-
                 # receive map result
                 if not reducer.fetch_mapping_result():
                   raise ErrorNeedsRetry(ErrorCodes.OSSGetObjectFailed.value)
-
                 # reducing
                 reducer.reducing()
-
                 # save to oss bucket
                 if not reducer.persist():
                   raise ErrorNeedsRetry(ErrorCodes.OSSPushObjectFailed.value)
-
                 return json.dumps({"ReducingStatus": ErrorCodes.StatusSuccess.value})
-
       FunctionName: reducer
       Handler: index.handler
       Runtime: python3
@@ -350,19 +307,19 @@ Resources:
       Name:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - demo-etl-<random-suffix>
       RoleArn:
         Fn::Replace:
           - <main-account-id>:
-              Ref: MainAccountID
+              Ref: ALIYUN::TenantId
             <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - acs:ram::<main-account-id>:role/ETLDemoRole-<random-suffix>
       Definition:
         Fn::Replace:
           - <random-suffix>:
-              Ref: RandomSuffix
+              Ref: ALIYUN::StackName
           - |-
             version: v1beta1
             type: flow
@@ -395,7 +352,6 @@ Resources:
                   - errors:
                     - ErrorNeedsRetry
                     goto: retryFailed
-
               # 本步骤为 Map，根据上一步划分的 shards 数量创建对应实例并行处理
               - type: foreach
                 name: mapping
@@ -424,7 +380,6 @@ Resources:
                         intervalSeconds: 3
                         maxAttempts: 10
                         multiplier: 2
-
               # 本步骤为 reduce，合并所有 shards 的 Map 结果，并将最终的处理结果存储到数据仓库中
               - type: task
                 name: reducing
@@ -452,7 +407,6 @@ Resources:
                     - ErrorNeedsRetry
                     goto: retryFailed
                 end: true
-
               - type: fail
                 name: retryFailed
                 error: StatusFailed

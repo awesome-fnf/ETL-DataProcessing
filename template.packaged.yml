@@ -1,0 +1,195 @@
+ROSTemplateFormatVersion: '2015-09-01'
+Transform: 'Aliyun::Serverless-2018-04-03'
+Resources:
+  RAMRole:
+    Type: 'ALIYUN::RAM::Role'
+    Properties:
+      RoleName:
+        'Fn::Replace':
+          - <random-suffix>:
+              Ref: 'ALIYUN::StackName'
+          - ETLDemoRole-<random-suffix>
+      Description: RAM role for etl demo
+      AssumeRolePolicyDocument:
+        Version: 1
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - fc.aliyuncs.com
+                - fnf.aliyuncs.com
+      Policies:
+        - PolicyName:
+            'Fn::Replace':
+              - <random-suffix>:
+                  Ref: 'ALIYUN::StackName'
+              - ETLDemoRAMPolicy-<random-suffix>
+          PolicyDocument:
+            Version: 1
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'fc:InvokeFunction'
+                  - 'oss:*'
+                Resource:
+                  - '*'
+  OSSBucket:
+    Type: 'ALIYUN::OSS::Bucket'
+    Properties:
+      BucketName:
+        'Fn::Replace':
+          - <stack-name>:
+              Ref: 'ALIYUN::StackName'
+          - demo-etl-<stack-name>
+      AccessControl: private
+  demo-etl-flow:
+    Type: 'Aliyun::Serverless::Flow'
+    Properties:
+      Description: Unzip single file
+      Role:
+        'Fn::GetAtt':
+          - RAMRole
+          - Arn
+      Definition:
+        'Fn::Sub': |
+          version: v1beta1
+          type: flow
+          steps:
+            - type: task
+              name: fetcher
+              resourceArn: '${demo-etl-serviceshards-spliter.ARN}'
+              outputMappings:
+                - target: shards
+                  source: $local.shards
+                - target: shard_ids
+                  source: $local.shard_ids
+              retry:
+                - errors:
+                    - ErrorNeedsRetry
+                  intervalSeconds: 10
+                  maxAttempts: 3
+                  multiplier: 2
+                - errors:
+                    - FC.ResourceThrottled
+                    - FC.ResourceExhausted
+                    - FC.InternalServerError
+                    - FnF.TaskTimeout
+                    - FC.Unknown
+                  intervalSeconds: 3
+                  maxAttempts: 10
+                  multiplier: 2
+              catch:
+                - errors:
+                    - ErrorNeedsRetry
+                  goto: retryFailed
+            - type: foreach
+              name: mapping
+              inputMappings:
+                - target: shards
+                  source: $local.shards
+              iterationMapping:
+                collection: $.shards
+                item: shard
+              steps:
+                - type: task
+                  name: singleMappingJob
+                  resourceArn: '${demo-etl-servicemapper.ARN}'
+                  retry:
+                    - errors:
+                        - ErrorNeedsRetry
+                      intervalSeconds: 10
+                      maxAttempts: 3
+                      multiplier: 2
+                    - errors:
+                        - FC.ResourceThrottled
+                        - FC.ResourceExhausted
+                        - FC.InternalServerError
+                        - FnF.TaskTimeout
+                        - FC.Unknown
+                      intervalSeconds: 3
+                      maxAttempts: 10
+                      multiplier: 2
+            - type: task
+              name: reducing
+              resourceArn: '${demo-etl-servicereducer.ARN}'
+              inputMappings:
+                - target: shard_ids
+                  source: $local.shard_ids
+              retry:
+                - errors:
+                    - ErrorNeedsRetry
+                  intervalSeconds: 10
+                  maxAttempts: 3
+                  multiplier: 2
+                - errors:
+                    - FC.ResourceThrottled
+                    - FC.ResourceExhausted
+                    - FC.InternalServerError
+                    - FnF.TaskTimeout
+                    - FC.Unknown
+                  intervalSeconds: 3
+                  maxAttempts: 10
+                  multiplier: 2
+              catch:
+                - errors:
+                    - ErrorNeedsRetry
+                  goto: retryFailed
+              end: true
+            - type: fail
+              name: retryFailed
+              error: StatusFailed
+              cause: retry several times failed
+    DependsOn:
+      - demo-etl-serviceshards-spliter
+      - demo-etl-servicemapper
+      - demo-etl-servicereducer
+  demo-etl-service:
+    Type: 'Aliyun::Serverless::Service'
+    Properties:
+      Role:
+        'Fn::GetAtt':
+          - RAMRole
+          - Arn
+    shards-spliter:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 60
+        MemorySize: 256
+        CodeUri: >-
+          oss://fun-gen-cn-shenzhen-1986448204172188/d9f91bd7c4107774585f536b8a06044a
+        EnvironmentVariables:
+          BucketName:
+            'Fn::GetAtt':
+              - OSSBucket
+              - Name
+    mapper:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 600
+        MemorySize: 512
+        CodeUri: >-
+          oss://fun-gen-cn-shenzhen-1986448204172188/c619d729f5b6a39ff73eae10da39c4c1
+        EnvironmentVariables:
+          BucketName:
+            'Fn::GetAtt':
+              - OSSBucket
+              - Name
+    reducer:
+      Type: 'Aliyun::Serverless::Function'
+      Properties:
+        Handler: index.handler
+        Runtime: python3
+        Timeout: 600
+        MemorySize: 512
+        CodeUri: >-
+          oss://fun-gen-cn-shenzhen-1986448204172188/0a5bd2f175056cfe5e57d07f3cbab183
+        EnvironmentVariables:
+          BucketName:
+            'Fn::GetAtt':
+              - OSSBucket
+              - Name

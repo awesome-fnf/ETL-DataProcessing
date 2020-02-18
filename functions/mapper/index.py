@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import json
 import oss2
+import os
 from enum import Enum
 
-oss_endpoint = "oss-cn-beijing-internal.aliyuncs.com"
-oss_bucket = "demo-etl"
 intermediate_result_prefix = "map_%s"
 
 
@@ -33,7 +32,9 @@ class Mapper:
         creds = context.credentials
         self.mapping_result_file = intermediate_result_prefix % shard_id
         auth = oss2.StsAuth(creds.access_key_id, creds.access_key_secret, creds.security_token)
-        self.bucket = oss2.Bucket(auth, oss_endpoint, oss_bucket)
+        endpoint = 'https://oss-%s-internal.aliyuncs.com' % context.region
+        oss_bucket = os.environ["BucketName"]
+        self.bucket = oss2.Bucket(auth, endpoint, oss_bucket)
         self.data = shard_data
         self.mapping_result = {}
 
